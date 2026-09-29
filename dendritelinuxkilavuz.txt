@@ -1,0 +1,96 @@
+# Paketleri yükle
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git golang build-essential
+
+# Dendrite indir ve derle
+cd ~
+git clone https://github.com/matrix-org/dendrite.git
+cd dendrite
+go build -o bin/dendrite ./cmd/dendrite
+go run ./cmd/generate-keys -private-key matrix_key.pem
+
+# Sistem kullanıcısını ve gerekli dizinleri oluştur
+sudo useradd -r -s /bin/false dendrite
+sudo mkdir -p /var/lib/dendrite /var/lib/dendrite/media /etc/dendrite
+
+# Binary dosyasını ve anahtarı ilgili konumlara taşı/kopyala
+sudo cp bin/dendrite /usr/local/bin/dendrite-monolith-sqlite
+sudo mv matrix_key.pem /etc/dendrite/
+
+# Konfigürasyonu doğrudan /etc/dendrite/dendrite.yaml konumuna yazdır
+sudo tee /etc/dendrite/dendrite.yaml > /dev/null << 'EOF'
+version: 2
+global:
+  server_name: "Deneme"
+  private_key: "/etc/dendrite/matrix_key.pem"
+  key_id: "ed25519:auto"
+  well_known_client_name: ""
+  presence:
+    enable_inbound: false
+    enable_outbound: false
+  jetstream:
+    storage_path: "/var/lib/dendrite"
+client_api:
+  registration_shared_secret: "sifreyi_degis"
+  registration_disabled: false
+  rate_limiting:
+    enabled: false
+media_api:
+  base_path: "/var/lib/dendrite/media"
+  max_file_size_bytes: 104857600
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_mediaapi.db?_journal_mode=WAL"
+room_server:
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_roomserver.db?_journal_mode=WAL"
+sync_api:
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_syncapi.db?_journal_mode=WAL"
+user_api:
+  account_database:
+    connection_string: "file:/var/lib/dendrite/dendrite_userapi.db?_journal_mode=WAL"
+federation_api:
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_federationapi.db?_journal_mode=WAL"
+key_server:
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_keyserver.db?_journal_mode=WAL"
+relay_api:
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_relayapi.db?_journal_mode=WAL"
+mscs:
+  database:
+    connection_string: "file:/var/lib/dendrite/dendrite_mscs.db?_journal_mode=WAL"
+logging:
+  - type: file
+    level: warn
+    params:
+      path: /tmp/dendrite.log
+EOF
+
+# Klasör sahipliklerini ver
+sudo chown -R dendrite:dendrite /var/lib/dendrite /etc/dendrite
+
+# Arkaplanda servis olarak çalışması için systemd'ye ekleme:
+sudo nano /etc/systemd/system/dendrite.service
+
+# İçine bunu yapıştır:
+[Unit]
+Description=Matrix server
+After=network.target
+
+[Service]
+Type=simple
+User=dendrite
+Group=dendrite
+WorkingDirectory=/var/lib/dendrite
+ExecStart=/usr/local/bin/dendrite-monolith-sqlite --config /etc/dendrite/dendrite.yaml --really-enable-open-registration
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+# Servisi yükle ve başlat
+sudo systemctl daemon-reload
+sudo systemctl start dendrite
