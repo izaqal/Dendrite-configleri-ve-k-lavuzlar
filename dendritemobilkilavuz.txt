@@ -1,0 +1,73 @@
+# Mobilde matrix sunucusu açmak
+
+pkg update && pkg upgrade -y
+pkg install golang git -y
+git clone https://github.com/matrix-org/dendrite.git
+cd dendrite
+go build -o bin/dendrite ./cmd/dendrite
+go run ./cmd/generate-keys -config dendrite.yaml -private-key matrix_key.pem
+rm dendrite.yaml
+cat << 'EOF' > dendrite.yaml
+version: 2
+
+global:
+  server_name: "localhost"
+  private_key: "matrix_key.pem"
+  key_id: "ed25519:auto"
+  metrics:
+    enabled: false
+  jetstream:
+    in_memory: true
+    storage_path: "./jetstream"
+
+app_service_api:
+  database:
+    connection_string: "file:dendrite_appservice.db?_busy_timeout=5000"
+
+client_api:
+  registration_disabled: false
+  enable_registration_captcha: false
+  registration_shared_secret: "DobraChatSecret123!"
+  rate_limiting:
+    enabled: false
+
+media_api:
+  max_file_size_bytes: 31457280
+  base_path: "./media_store"
+  database:
+    connection_string: "file:dendrite_mediaapi.db?_busy_timeout=5000"
+
+room_server:
+  database:
+    connection_string: "file:dendrite_roomserver.db?_busy_timeout=5000"
+
+sync_api:
+  database:
+    connection_string: "file:dendrite_syncapi.db?_busy_timeout=5000"
+
+user_api:
+  account_database:
+    connection_string: "file:dendrite_userapi.db?_busy_timeout=5000"
+
+federation_api:
+  disable_federation: true
+  database:
+    connection_string: "file:dendrite_federationapi.db?_busy_timeout=5000"
+
+key_server:
+  database:
+    connection_string: "file:dendrite_keyserver.db?_busy_timeout=5000"
+
+mscs:
+  database:
+    connection_string: "file:dendrite_mscs.db?_busy_timeout=5000"
+
+relay_api:
+  database:
+    connection_string: "file:dendrite_relayapi.db?_busy_timeout=5000"
+
+logging:
+  - type: std
+    level: info
+EOF
+./bin/dendrite --config dendrite.yaml --really-enable-open-registration
